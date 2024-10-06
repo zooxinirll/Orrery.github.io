@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Orrery Web App</title>
+    <style>
+        body, html {
+            margin: px0;
+            height: 100%;
+            font-family: 'Roboto', sans-serif;
+            background-color: black;
+            overflow: hidden;
+        }
+
+        #container {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .info-box {
+            position: fixed;
+            top: 50px;
+            left: 20px;
+            width: 250px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #333;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+            opacity: 0;
+            transform: translateX(-100%);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .info-box.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        @media (max-width: 768px) {
+            .info-box {
+                font-size: 12px;
+                padding: 10px;
+                width: 200px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .info-box {
+                font-size: 10px;
+                padding: 8px;
+                width: 180px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <div class="info-box" id="infoBox">
+        <div id="planetName">Select an Object</div>
+        <div id="planetDetails"></div>
+    </div>
+
+    <!-- Include Three.js and GSAP libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.9.1/gsap.min.js"></script>
+
+    <script>
+ // Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.getElementById('container').appendChild(renderer.domElement);
+
+// Add lights
+const ambientLight = new THREE.AmbientLight(0x404040, 1.5);
+scene.add(ambientLight);
+
+const directionalLight = new THREE.DirectionalLight(0xffffff, 1.5);
+directionalLight.position.set(100, 100, 50).normalize();
+scene.add(directionalLight);
+
+// Info box element
+const infoBox = document.getElementById('infoBox');
+const planetName = document.getElementById('planetName');
+const planetDetails = document.getElementById('planetDetails');
+
+// Planet data
+const planets = [
+    { name: 'Mercury', radius: 3, color: 0xaaaaaa, distance: 20, speed: 0.01, mass: '3.285 × 10^23 kg', orbitalPeriod: '88 days' },
+    { name: 'Venus', radius: 5, color: 0xffcc33, distance: 30, speed: 0.008, mass: '4.867 × 10^24 kg', orbitalPeriod: '225 days' },
+    { name: 'Earth', radius: 6, color: 0x3399ff, distance: 40, speed: 0.007, mass: '5.972 × 10^24 kg', orbitalPeriod: '365 days', atmosphere: 'Nitrogen, Oxygen' },
+    { name: 'Mars', radius: 4.5, color: 0xff6633, distance: 50, speed: 0.006, mass: '6.39 × 10^23 kg', orbitalPeriod: '687 days', atmosphere: 'Carbon Dioxide' },
+    { name: 'Jupiter', radius: 9, color: 0xff9933, distance: 70, speed: 0.005, mass: '1.898 × 10^27 kg', orbitalPeriod: '12 years' },
+    { name: 'Saturn', radius: 8, color: 0xffcc66, distance: 90, speed: 0.004, mass: '5.683 × 10^26 kg', orbitalPeriod: '29 years' },
+    { name: 'Uranus', radius: 7, color: 0x66ccff, distance: 110, speed: 0.003, mass: '8.681 × 10^25 kg', orbitalPeriod: '84 years' },
+    { name: 'Neptune', radius: 7, color: 0x3366ff, distance: 130, speed: 0.002, mass: '1.024 × 10^26 kg', orbitalPeriod: '165 years' },
+];
+
+// Create Sun with emissive material
+const sunGeometry = new THREE.SphereGeometry(12, 32, 32);
+const sunMaterial = new THREE.MeshLambertMaterial({ color: 0xffff00, emissive: 0xffff00 });
+const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+scene.add(sun);
+
+// Sun glow effect
+const glowGeometry = new THREE.SphereGeometry(15, 32, 32);
+const glowMaterial = new THREE.ShaderMaterial({
+    vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+            vNormal = normalize(normalMatrix * normal);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        varying vec3 vNormal;
+        void main() {
+            float intensity = pow(1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+            gl_FragColor = vec4(1.0, 1.0, 0.0, intensity * 0.3);
+        }
+    `,
+    side: THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+    transparent: true
+});
+const glowMesh = new THREE.Mesh(glowGeometry, glowMaterial);
+sun.add(glowMesh);
+
+// Create planets
+const planetMeshes = [];
+planets.forEach(planet => {
+    const geometry = new THREE.SphereGeometry(planet.radius, 32, 32);
+    const material = new THREE.MeshLambertMaterial({ color: planet.color });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData = { ...planet, angle: Math.random() * Math.PI * 2 };
+    scene.add(mesh);
+    planetMeshes.push(mesh);
+
+    // Create orbit line
+    const orbitGeometry = new THREE.RingGeometry(planet.distance - 0.5, planet.distance + 0.5, 64);
+    const orbitMaterial = new THREE.MeshBasicMaterial({ color: 0x555555, side: THREE.DoubleSide });
+    const orbit = new THREE.Mesh(orbitGeometry, orbitMaterial);
+    orbit.rotation.x = Math.PI / 2;
+    scene.add(orbit);
+});
+
+// Camera settings
+camera.position.z = 200;
+let cameraAngle = 0;
+
+function animate() {
+    requestAnimationFrame(animate);
+
+    // Rotate camera
+    cameraAngle += 0.0005;
+    camera.position.x = 200 * Math.sin(cameraAngle);
+    camera.position.z = 200 * Math.cos(cameraAngle);
+    camera.lookAt(scene.position);
+
+    // Animate planets
+    planetMeshes.forEach(mesh => {
+        const { distance, speed, angle } = mesh.userData;
+        mesh.userData.angle += speed;
+        mesh.position.x = distance * Math.cos(mesh.userData.angle);
+        mesh.position.z = distance * Math.sin(mesh.userData.angle);
+    });
+
+    renderer.render(scene, camera);
+}
+animate();
+
+// Raycaster for planet interaction
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// Display planet info on click
+window.addEventListener('click', (event) => {
+    mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+
+    const intersects = raycaster.intersectObjects(planetMeshes);
+    if (intersects.length > 0) {
+        const planet = intersects[0].object.userData;
+
+        // Update info box
+        planetName.textContent = planet.name;
+        planetDetails.innerHTML = `
+            Radius: ${planet.radius} km<br>
+            Distance: ${planet.distance} million km<br>
+            Speed: ${planet.speed} rad/s<br>
+            Mass: ${planet.mass}<br>
+            Orbital Period: ${planet.orbitalPeriod}
+        `;
+        if (planet.atmosphere) {
+            planetDetails.innerHTML += `<br>Atmosphere: ${planet.atmosphere}`;
+        }
+        infoBox.classList.add('show');
+    }
+});
+
+// Handle window resize
+window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+});
